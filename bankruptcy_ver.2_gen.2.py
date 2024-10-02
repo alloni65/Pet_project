@@ -397,7 +397,7 @@ explainer = shap.KernelExplainer(best_model.predict_proba, X_train_preprocessed_
 shap_values = explainer.shap_values(X_test_preprocessed_smpl)
 
 # Усредняем значения SHAP по всем образцам (если многоклассовая классификация, усредним по классу)
-mean_shap_values = np.mean(np.abs(shap_values[1]), axis=0) 
+mean_shap_values = np.mean(np.abs(shap_values[1]), axis=1) 
 
 # Создаем датафрейм с весовыми коэффициентами
 feature_importance = pd.DataFrame(list(zip(all_feature_names, mean_shap_values)),
