@@ -15,6 +15,11 @@ from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score
 import shap
 import lime
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import confusion_matrix
+
 
 #Считываем данные с подготовленных CSV файлов
 ds_1 = pd.read_csv(r"C:\Dataset\ds_1.csv", thousands=',')
@@ -205,6 +210,21 @@ def category (df):
     df['niche'] = df['niche'].fillna('others')
     return df
 
+#Функция построения корреляционной матрицы
+def cor_matrix (dataset, columns):
+    n = 6
+    for i in range(0, len(columns), n):
+        sub_columns = columns_list[i:i+n]
+
+        # Строим корреляционную матрицу для этих колонок
+        corr_matrix = dataset[sub_columns].corr(method='spearman')
+
+        # Визуализация матрицы корреляции
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
+        plt.title(f'Корреляционная матрица для метрик {i+1} до {i+n}')
+        plt.show()
+
 #ПРЕДОБРАБОТКА ДАННЫХ ДЛЯ ДАТАСЕТА DS1
 
 #Фильтруем метрики для датасета
@@ -266,7 +286,7 @@ pure_ds0.info()
 #----------------------------------------------------------------------------------------------------------------------------#
 
 #Ограничем количество строк в датасете pure_ds0 для баланса классов.
-pure_ds0_sampled = pure_ds0.sample(frac=0.3)
+pure_ds0_sampled = pure_ds0
 
 #Соединим датасеты
 df = pd.concat([pure_ds0_sampled, pure_ds1])
@@ -278,7 +298,7 @@ df['id'] = range(1,len(df) + 1)
 #Определимся с метриками для кодирования и скейла
 # columns_list = df.columns.to_list()
 # print(columns_list)
-columns_list = ['id','company_maturity', 'non_current_assets', 'inventories', 'net_assets',
+columns_list = ['company_maturity', 'non_current_assets', 'inventories', 'net_assets',
                  'cash', 'current_assets', 'equity',
                    'own_operational_equity', 'revenue', 'income_others',
                      'loss_others', 'inc_loss_bef_tax', 'current_tax', 'repayment_period_acc_payable',
@@ -286,31 +306,26 @@ columns_list = ['id','company_maturity', 'non_current_assets', 'inventories', 'n
                         'ratio_acc_recievable_assets', 'ratio_equity_assets', 'ratio_turnover_assets_total',
                         'ratio_borrowed_own_funds', 'ratio_net_debt_ratio', 'ratio_assets_equity', 'ratio_availablity_own_equity',
                         'rocs', 'ratio_cost_revenue', 'roa', 'roe', 'KTL', 'KBL', 'KAL','bankruptsy', 'niche']
-# n = 6
-# for i in range(0, len(columns_list), n):
-#     sub_columns = columns_list[i:i+n]
 
-#     # Строим корреляционную матрицу для этих колонок
-#     corr_matrix = df[sub_columns].corr(method='spearman')
 
-#     # Визуализация матрицы корреляции
-#     plt.figure(figsize=(8, 6))
-#     sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', vmin=-1, vmax=1)
-#     plt.title(f'Корреляционная матрица для метрик {i+1} до {i+n}')
-#     plt.show()
 
 #По итогам анализа корреляционных матриц, были удалены некоторые метрики, присутствие которых, вызывало бы мультиколлинеарность.
+#cor_matrix(df, columns_list)
+
+
+#Решил не пользовать энкодер, а самостоятельно закодировать качественные признаки
 pre_df = df[columns_list]
 dict = {'trade':1,'produce':2,'warehouse':3,'rent':4,'others':5}
 pre_df['niche'] = pre_df['niche'].map(dict)
-#print(pre_df.info())
+
 
 #Распределим метрики по гурппам для препроцессинга
 feature_quality = pre_df.select_dtypes(include = {'object'}).columns.to_list()
 feature_quantity = pre_df.select_dtypes(include = {'int64', 'float64'}).columns.to_list()
 feature_quantity.remove('bankruptsy')
 
-#print(pre_df[feature_quality])
+
+#--------------------------------------------------------------------------------------------
 
 X = pre_df.drop(['bankruptsy'], axis = 1)
 y = pre_df['bankruptsy']
@@ -336,15 +351,15 @@ pipe_final = Pipeline([
 param_grid = [
     {'models': [DecisionTreeClassifier(random_state = RANDOM_STATE)],
     'models__max_features': range (1, 3),
-    'models__max_depth': range (1, 3),
+    'models__max_depth': range (1, 7),
     'preprocessor__num': [StandardScaler(), MinMaxScaler(), 'passthrough']  
     },
     {'models': [KNeighborsClassifier()],
-    'models__n_neighbors': range (1, 3),
+    'models__n_neighbors': range (1, 5),
     'preprocessor__num': [StandardScaler(), MinMaxScaler(), 'passthrough']  
     },
     {'models': [LogisticRegression(random_state = RANDOM_STATE)],
-    'models__C': range (1, 5),
+    'models__C': range (1, 15),
     'preprocessor__num': [StandardScaler(), MinMaxScaler(), 'passthrough']  
     },
     {'models': [SVC(random_state = RANDOM_STATE, probability = True)],
@@ -369,45 +384,94 @@ print('Качество модели на основе метрики f1:\n\n',
 y_test_pred = randomized_search.predict(X_test)
 print(f1_score(y_test, y_test_pred))
 
-# Вытягиваем модель из пайплайна
-best_model = randomized_search.best_estimator_.named_steps['models']
+#----------------------------------------------------------------------------------------------
 
-# Сохраняем в переменную пайплайн с предобработкой данных
+#Воспользуемся библиотекой методом SHAP для визуализации значения метрик по убыванию
+best_model = randomized_search.best_estimator_.named_steps['models']
 preprocessor = randomized_search.best_estimator_.named_steps['preprocessor']
 
-# Записываем в переменные предобработанные тренировочную и тестовую выборки
 X_train_preprocessed = preprocessor.transform(X_train)
 X_test_preprocessed = preprocessor.transform(X_test)
 
-# Вытягиваем названия признаков для дальнейшего построения датафрейма
-num_feature_names = num_columns  # численные признаки
-
-all_feature_names = np.concatenate([num_feature_names])
+all_feature_names = num_columns  
 
 # Строим датафреймы 
 X_train_preprocessed_df = pd.DataFrame(X_train_preprocessed, columns=all_feature_names)
 X_test_preprocessed_df = pd.DataFrame(X_test_preprocessed, columns=all_feature_names)
-
-# Семплируем данные 
 X_train_preprocessed_smpl = shap.sample(X_train_preprocessed_df, 15, random_state=RANDOM_STATE)
 X_test_preprocessed_smpl = shap.sample(X_test_preprocessed_df, 15, random_state=RANDOM_STATE)
 
 # Применяем метод SHAP для оценки важности признаков
 explainer = shap.KernelExplainer(best_model.predict_proba, X_train_preprocessed_smpl)
 shap_values = explainer.shap_values(X_test_preprocessed_smpl)
-
-# Усредняем значения SHAP по всем образцам (если многоклассовая классификация, усредним по классу)
 mean_shap_values = np.mean(np.abs(shap_values[1]), axis=1) 
 
 # Создаем датафрейм с весовыми коэффициентами
 feature_importance = pd.DataFrame(list(zip(all_feature_names, mean_shap_values)),
                                   columns=['Feature', 'SHAP Importance'])
 
-# Сортируем по важности в порядке убывания
 feature_importance_sorted = feature_importance.sort_values(by='SHAP Importance', ascending=False).head(10)
-
-# Выводим результат (топ-10 метрик по важности)
 print(feature_importance_sorted)
 
+# print(pre_df.groupby(by ='bankruptsy').count())
+
+# cm = confusion_matrix(y_test, y_test_pred)
+# sns.heatmap(cm, annot=True, fmt='d', cmap='Blues_r')
+# plt.ylabel('True label')
+# plt.xlabel('Predicted')
+# plt.show()
+
+acc = accuracy_score(y_test, y_test_pred)
+precision = precision_score(y_test, y_test_pred)
+recall = recall_score(y_test, y_test_pred)
+
+print('recall: ',round(recall ,3))
+print('precision: ',round(precision,3))
+print('accuracy: ',round(acc,3))
 
 
+#Модель должна стремиться к максимизации метрики precision, так как для дальнейшей аналитики важнее быть уверенным в отсутствие ошибок не банкрот (на самом деле банкрот).
+#Для минимизации ошибок первого или второго рода изменим threshold. Уменьшая % ошибок первого рода, увеличится % ошибок второго рода.
+y_proba = randomized_search.predict_proba(X_test)[:, 1]
+data = pd.DataFrame(zip(y_test, y_proba),
+columns = ['y_valid', 'y_proba']).sort_values(by='y_proba',ascending=False) 
+
+def cost(y_valid,y_pred_):
+    if y_valid < y_pred_:
+        return 1
+    else:
+        return 0
+    
+thresholds = [round(i,3) for i in np.linspace(0.8,0.97,num = 12,endpoint=False)]
+
+values = []
+columns = []
+for i in thresholds:
+    columns.append('y_pred_'+str(i))
+    data['y_pred_'] = data['y_proba'].apply(lambda x: 1 if x>= i else 0)
+    data['check'] = data.apply(lambda x : cost(x.y_valid,x.y_pred_), 1)
+    values.append(data['check'].sum())
+
+costs = pd.DataFrame(zip(columns, values),columns = ['Threshold', 'FP']) 
+print(costs)
+
+
+
+
+threshold = 0.913
+y_pred_custom_threshold = (y_proba > threshold).astype(int)
+y_pred_custom_threshold
+cm = confusion_matrix(y_test, y_pred_custom_threshold)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues_r')
+plt.ylabel('True label')
+plt.xlabel('Predicted')
+plt.show()
+
+acc = accuracy_score(y_test, y_pred_custom_threshold)
+precision = precision_score(y_test, y_pred_custom_threshold)
+recall = recall_score(y_test, y_pred_custom_threshold)
+print('recall: ',round(recall ,3))
+print('precision: ',round(precision,3))
+print('accuracy: ',round(acc,3))
+
+#Максимизируем качество модели, изменяя threshhold до значения 0.913, который дает минимум ошибки первого рода
