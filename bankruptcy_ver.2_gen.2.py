@@ -113,25 +113,28 @@ def ochistka (df):
     return df
 
 #Функция построения гистограммы и ящика с усами
-def plot_hist_box (df, features):
-    num_plots = len(features)
-    plt.figure(figsize=(10, 5 * num_plots))
-    
-    for i, column in enumerate (features):
-        #Гистограмма
-        plt.subplot(num_plots, 2, 2*i+1)
-        df[column].hist(bins = 25)
-        plt.title(f'Гистограмма {column}')
-        plt.xlabel(column)
-        plt.ylabel('Частота')
-        #Ящик с усами
-        plt.subplot(num_plots, 2, 2*i+2)
-        df.boxplot(column = column)
-        plt.title (f'Ящик с усами {column}')
-        
-    plt.tight_layout()
-    plt.show()
+def plot_hist_box(df, features):
+    n = 6  # количество признаков в одном ряду
+    for i in range(0, len(features), n):
+        sub_columns = features[i:i+n]
 
+        plt.figure(figsize=(7, 3 * len(sub_columns)))  # корректируем размер фигуры
+
+        for idx, col in enumerate(sub_columns):
+            # Гистограмма
+            plt.subplot(len(sub_columns), 2, 2 * idx + 1)
+            df[col].hist(bins=25)
+            plt.title(f'Гистограмма {col}')
+            plt.ylabel('Частота')
+
+            # Ящик с усами
+            plt.subplot(len(sub_columns), 2, 2 * idx + 2)
+            df.boxplot(column=[col])
+            plt.title(f'Ящик с усами {col}')
+
+        plt.tight_layout()  # улучшаем расположение графиков
+        plt.show()
+        
 #Функция переименования метрик
 def rename_index (df):
     df = df.rename(columns={'2023, Рентабельность затрат, %': 'rocs',
@@ -233,6 +236,7 @@ feature_filter = pd.DataFrame({'feature_name': feature_list})
 feature_filter['percent'] = feature_filter['feature_name'].apply(lambda x: ds_0[x].isnull().sum())/len(ds_0)
 feature_filter = feature_filter[feature_filter['percent'] < 0.4]
 new_feature_list = feature_filter['feature_name']
+new_feature_list = new_feature_list
 ds_1 = ds_1[new_feature_list]
 
 
@@ -279,7 +283,25 @@ pure_ds0 = pure_ds0.query('KTL < 3')
 #plot_hist_box (pure_ds0, features)
 pure_ds0.info()  
 
+#Фрагмент очищает датасет от выбросов. 
 
+# columns_to_delete_outlier = ['repayment_period_acc_payable',
+#                         'inventory_turnover', 'fixed_assets_turnover',
+#                         'ratio_acc_recievable_assets', 'ratio_equity_assets', 'ratio_turnover_assets_total',
+#                         'ratio_borrowed_own_funds', 'ratio_net_debt_ratio', 'ratio_assets_equity', 'ratio_availablity_own_equity',
+#                         'rocs', 'ratio_cost_revenue', 'roa', 'roe', 'KTL', 'KBL', 'KAL']
+columns_to_delete_outlier = ['ratio_acc_recievable_assets', 'ratio_equity_assets', 'ratio_turnover_assets_total',
+                        'ratio_borrowed_own_funds', 'ratio_net_debt_ratio', 'ratio_assets_equity', 'ratio_availablity_own_equity',
+                        'rocs', 'ratio_cost_revenue', 'roa', 'roe', 'KTL', 'KBL', 'KAL']
+if pure_ds0.index.duplicated().any():
+    pure_ds0 = pure_ds0.reset_index(drop=True)
+for i in columns_to_delete_outlier:
+    q1 = pure_ds0[i].quantile(0.25)
+    q3 = pure_ds0[i].quantile(0.75)
+    lowest = q1 - 1.5 * (q3 - q1)
+    highest = q3 + 1.5 * (q3 - q1)
+    pure_ds0[i] = pure_ds0[i][(pure_ds0[i] < highest) & (pure_ds0[i] > lowest)]
+    pure_ds0 = pure_ds0.dropna(subset = i)
 
 
 
@@ -298,8 +320,8 @@ df['id'] = range(1,len(df) + 1)
 #Определимся с метриками для кодирования и скейла
 # columns_list = df.columns.to_list()
 # print(columns_list)
-columns_list = ['company_maturity', 'non_current_assets', 'inventories', 'net_assets',
-                 'cash', 'current_assets', 'equity',
+columns_list = ['company_maturity','ratio_autonomy', 'non_current_assets', 'inventories', 'net_assets',
+                 'cash', 'current_assets', 'equity', 'own_equity', 'accounts_payable',
                    'own_operational_equity', 'revenue', 'income_others',
                      'loss_others', 'inc_loss_bef_tax', 'current_tax', 'repayment_period_acc_payable',
                         'inventory_turnover', 'fixed_assets_turnover',
@@ -318,6 +340,11 @@ pre_df = df[columns_list]
 dict = {'trade':1,'produce':2,'warehouse':3,'rent':4,'others':5}
 pre_df['niche'] = pre_df['niche'].map(dict)
 
+
+print(pre_df.isna().sum()
+)
+pre_df.info()
+print(pre_df.groupby(by ='bankruptsy').count())
 
 #Распределим метрики по гурппам для препроцессинга
 feature_quality = pre_df.select_dtypes(include = {'object'}).columns.to_list()
@@ -456,8 +483,6 @@ costs = pd.DataFrame(zip(columns, values),columns = ['Threshold', 'FP'])
 print(costs)
 
 
-
-
 threshold = 0.913
 y_pred_custom_threshold = (y_proba > threshold).astype(int)
 y_pred_custom_threshold
@@ -475,3 +500,51 @@ print('precision: ',round(precision,3))
 print('accuracy: ',round(acc,3))
 
 #Максимизируем качество модели, изменяя threshhold до значения 0.913, который дает минимум ошибки первого рода
+
+result = pd.concat([X_test.reset_index(drop=True), pd.DataFrame(y_test_pred, columns = ['bankruptsy']).reset_index(drop=True)], axis=1)
+
+# feature_importance_sorted['Feature'].to_list()
+# ['ratio_autonomy', 'ratio_borrowed_own_funds', 'own_operational_equity', 'current_assets',
+# 'non_current_assets', 'own_equity', 'accounts_payable',
+# 'ratio_availablity_own_equity',
+#  'current_assets', 'inventories']
+
+target_features = ['ratio_acc_recievable_assets', 'ratio_equity_assets', 'ratio_turnover_assets_total',
+                        'ratio_borrowed_own_funds', 'ratio_net_debt_ratio', 'ratio_assets_equity', 'ratio_availablity_own_equity',
+                        'rocs', 'ratio_cost_revenue', 'roa', 'roe', 'KTL', 'KBL', 'KAL']
+
+coef_list_1 = []
+coef_list_0 = []
+
+
+for i in target_features:
+    if i != 'bankruptsy':
+        max_value1 = np.median(result[result['bankruptsy'] == 1][i])
+        min_value0 = np.median(result[result['bankruptsy'] == 0][i])  
+        coef_list_1.append(max_value1)
+        coef_list_0.append(min_value0)
+
+
+mean_coef_0 = pd.DataFrame(coef_list_0, columns = ['min'], index = target_features) 
+mean_coef_1 = pd.DataFrame(coef_list_1, columns = ['max'], index = target_features) 
+
+# mean_coef_0['Коэффициент финансовой автономии'] = mean_coef_0['ratio_autonomy']
+# mean_coef_1['Коэффициент финансовой автономии'] = mean_coef_1['ratio_autonomy']
+# mean_coef_0['Коэффициент финансового рычага'] = mean_coef_0['own_equity'] / mean_coef_0['assets_total']
+# mean_coef_1['Коэффициент финансового рычага'] = mean_coef_1['own_equity'] / mean_coef_0['assets_total']
+# mean_coef_0['Коэффициент маневренности капитала'] = mean_coef_0['own_operational_equity'] / mean_coef_0['current_assets']
+# mean_coef_1['Коэффициент маневренности капитала'] = mean_coef_1['own_operational_equity'] / mean_coef_1['current_assets']
+# mean_coef_0['Коэффициент постоянного актива'] = mean_coef_0['non_current_assets'] / (mean_coef_0['own_equity'] + mean_coef_0['accounts_payable'])
+# mean_coef_1['Коэффициент постоянного актива'] = mean_coef_1['non_current_assets'] / (mean_coef_1['own_equity'] + mean_coef_1['accounts_payable'])
+# mean_coef_0['Коэффициент обеспеченности оборотных активов собственными средствами'] = mean_coef_0['ratio_availablity_own_equity']
+# mean_coef_1['Коэффициент обеспеченности оборотных активов собственными средствами'] = mean_coef_1['ratio_availablity_own_equity']
+# mean_coef_0['Коэффициент обеспеченности запасов собственными средствами'] = mean_coef_0['current_assets'] / mean_coef_0['inventories']
+# mean_coef_1['Коэффициент обеспеченности запасов собственными средствами'] = mean_coef_1['current_assets'] / mean_coef_1['inventories']
+
+
+print(mean_coef_0)
+print(mean_coef_1)
+
+
+
+
