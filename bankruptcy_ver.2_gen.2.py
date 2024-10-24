@@ -236,7 +236,6 @@ feature_filter = pd.DataFrame({'feature_name': feature_list})
 feature_filter['percent'] = feature_filter['feature_name'].apply(lambda x: ds_0[x].isnull().sum())/len(ds_0)
 feature_filter = feature_filter[feature_filter['percent'] < 0.4]
 new_feature_list = feature_filter['feature_name']
-new_feature_list = new_feature_list
 ds_1 = ds_1[new_feature_list]
 
 
@@ -285,11 +284,6 @@ pure_ds0.info()
 
 #Фрагмент очищает датасет от выбросов. 
 
-# columns_to_delete_outlier = ['repayment_period_acc_payable',
-#                         'inventory_turnover', 'fixed_assets_turnover',
-#                         'ratio_acc_recievable_assets', 'ratio_equity_assets', 'ratio_turnover_assets_total',
-#                         'ratio_borrowed_own_funds', 'ratio_net_debt_ratio', 'ratio_assets_equity', 'ratio_availablity_own_equity',
-#                         'rocs', 'ratio_cost_revenue', 'roa', 'roe', 'KTL', 'KBL', 'KAL']
 columns_to_delete_outlier = ['ratio_acc_recievable_assets', 'ratio_equity_assets', 'ratio_turnover_assets_total',
                         'ratio_borrowed_own_funds', 'ratio_net_debt_ratio', 'ratio_assets_equity', 'ratio_availablity_own_equity',
                         'rocs', 'ratio_cost_revenue', 'roa', 'roe', 'KTL', 'KBL', 'KAL']
@@ -341,10 +335,6 @@ dict = {'trade':1,'produce':2,'warehouse':3,'rent':4,'others':5}
 pre_df['niche'] = pre_df['niche'].map(dict)
 
 
-print(pre_df.isna().sum()
-)
-pre_df.info()
-print(pre_df.groupby(by ='bankruptsy').count())
 
 #Распределим метрики по гурппам для препроцессинга
 feature_quality = pre_df.select_dtypes(include = {'object'}).columns.to_list()
@@ -469,7 +459,7 @@ def cost(y_valid,y_pred_):
     else:
         return 0
     
-thresholds = [round(i,3) for i in np.linspace(0.8,0.97,num = 12,endpoint=False)]
+thresholds = [round(i,3) for i in np.linspace(0.3,0.6,num = 12,endpoint=False)]
 
 values = []
 columns = []
@@ -483,7 +473,7 @@ costs = pd.DataFrame(zip(columns, values),columns = ['Threshold', 'FP'])
 print(costs)
 
 
-threshold = 0.913
+threshold = 0.525
 y_pred_custom_threshold = (y_proba > threshold).astype(int)
 y_pred_custom_threshold
 cm = confusion_matrix(y_test, y_pred_custom_threshold)
@@ -499,7 +489,7 @@ print('recall: ',round(recall ,3))
 print('precision: ',round(precision,3))
 print('accuracy: ',round(acc,3))
 
-#Максимизируем качество модели, изменяя threshhold до значения 0.913, который дает минимум ошибки первого рода
+#Максимизируем качество модели, изменяя threshhold до значения 0.525, который дает минимум ошибки первого рода
 
 result = pd.concat([X_test.reset_index(drop=True), pd.DataFrame(y_test_pred, columns = ['bankruptsy']).reset_index(drop=True)], axis=1)
 
@@ -513,20 +503,18 @@ target_features = ['ratio_acc_recievable_assets', 'ratio_equity_assets', 'ratio_
                         'ratio_borrowed_own_funds', 'ratio_net_debt_ratio', 'ratio_assets_equity', 'ratio_availablity_own_equity',
                         'rocs', 'ratio_cost_revenue', 'roa', 'roe', 'KTL', 'KBL', 'KAL']
 
-coef_list_1 = []
+
 coef_list_0 = []
 
 
 for i in target_features:
     if i != 'bankruptsy':
-        max_value1 = np.median(result[result['bankruptsy'] == 1][i])
         min_value0 = np.median(result[result['bankruptsy'] == 0][i])  
-        coef_list_1.append(max_value1)
         coef_list_0.append(min_value0)
 
 
 mean_coef_0 = pd.DataFrame(coef_list_0, columns = ['min'], index = target_features) 
-mean_coef_1 = pd.DataFrame(coef_list_1, columns = ['max'], index = target_features) 
+
 
 # mean_coef_0['Коэффициент финансовой автономии'] = mean_coef_0['ratio_autonomy']
 # mean_coef_1['Коэффициент финансовой автономии'] = mean_coef_1['ratio_autonomy']
@@ -543,8 +531,9 @@ mean_coef_1 = pd.DataFrame(coef_list_1, columns = ['max'], index = target_featur
 
 
 print(mean_coef_0)
-print(mean_coef_1)
 
+
+plot_hist_box (pre_df, ['ratio_net_debt_ratio'])
 
 
 
